@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+
+	<!-- jQuery -->
+	<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+
+	<!-- jQuery UI -->
+	<script src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.12.1/jquery-ui.min.js"></script>
+	<link rel="stylesheet" href="https://ajax.googleapis.com/ajax/libs/jqueryui/1.12.1/themes/smoothness/jquery-ui.css">
+
+	<!-- Bootstrap CSS -->
+	<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-giJF6kkoqNQ00vy+HMDP7azOuL0xtbfIcaT9wjKHr8RbDVddVHyTfAAsrekwKmP1" crossorigin="anonymous">
+	<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/js/bootstrap.bundle.min.js" integrity="sha384-ygbV9kiqUc6oa4msXn9868pTtWMgiQaeYH7/t7LECLbyPA2x65Kgf80OJFdroafW" crossorigin="anonymous"></script>
+
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.4.1/font/bootstrap-icons.css">
+
+	<title>練馬区オープンデータビューワー</title>
+
+	<meta property="og:site_name" content="練馬区オープンデータビューワー"/>
+	<meta property="og:url" content="https://code4nerima.github.io/OpenDataViewer/"/>
+	<meta property="og:title" content="練馬区オープンデータビューワー"/>
+	<meta property="og:type" content="Website" />
+	<meta property="og:description" content=""/>
+
+	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.8.0/dist/leaflet.css"
+	integrity="sha512-hoalWLoI8r4UszCkZ5kL8vayOGVae1oxXe/2A4AO6J9+580uKHDO3JdHb7NzwwzK5xr/Fs0W40kiNHxM9vyTtQ=="
+	crossorigin=""/>
+	<script src="https://unpkg.com/leaflet@1.8.0/dist/leaflet.js"
+	integrity="sha512-BB3hKbKWOc9Ez/TAwyWxNXeoV9c1v6FIeYiBieIWkpLjauysF18NzgR1MBNBXf8/KABdlkX68nAhlwcDFLGPCQ=="
+	crossorigin=""></script>
+
+	<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css"/>
+
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-easybutton@2/src/easy-button.css">
+	<script src="https://cdn.jsdelivr.net/npm/leaflet-easybutton@2/src/easy-button.js"></script>
+	<script src="encoding.js"></script>
+	<script src="functions.js"></script>
+
+   <style>
+		html, body {
+			height:100%;
+			background-color:ghostwhite;
+		}
+		
+		#map, #mapRow { 
+			height: 100%;
+		}
+   </style>
+</head>
+<body class="p-3" onload="onload()">
+	<div id="headerRow" class="row">
+		<div class="col">
+			<div class="row mb-1">
+				<div class="col">
+					<h3>練馬区オープンデータビューワー</h3>
+				</div>
+			</div>
+			<div class="row mb-3">
+				<div class="col small">
+					東京都練馬区のオープンデータで位置情報が入っているものを読み込みマッピングして表示します。
+				</div>
+			</div>
+		</div>
+	</div>
+	<div id="mapRow" class="row"">
+		<div class="col">
+			<div id="map"></div>
+		</div>
+	</div>
+<script>
+	class FileReaderEx extends FileReader{
+		constructor(){
+			super();
+		}
+
+		#readAs(blob, ctx){
+			return new Promise((res, rej)=>{
+				super.addEventListener("load", ({target}) => res(target.result));
+				super.addEventListener("error", ({target}) => rej(target.error));
+				super[ctx](blob);
+			});
+		}
+
+		readAsArrayBuffer(blob){
+			return this.#readAs(blob, "readAsArrayBuffer");
+		}
+
+		readAsDataURL(blob){
+			return this.#readAs(blob, "readAsDataURL");
+		}
+
+		readAsText(blob){
+			return this.#readAs(blob, "readAsText");
+		}
+	}
+
+	let map = null ;
+	let layerGroups = {} ;
+	
+	async function onload() {
+			
+		let resizeFunction = function () {
+			let hsize = $('body').height() ;
+			
+			hsize -= $("#headerRow").height();
+
+			$("#mapRow").height(hsize);
+			$("#map").height(hsize);
+		} ;
+
+		$(document).ready(resizeFunction);
+
+		$(window).resize(resizeFunction);
+
+		localStorage.clear() ;
+
+		let latlng = [35.737797, 139.653916];
+		let zoom = 13 ;
+
+		let storedLatlng = localStorage.getItem("latlng") ;
+		let storedZoom = localStorage.getItem("zoom") ;
+
+		if (storedLatlng != undefined) {
+			latlng = JSON.parse(storedLatlng) ;
+		}
+
+		if (storedZoom != undefined) {
+			zoom = storedZoom ;
+		}
+		
+		map = L.map('map', {zoomControl: true}).setView(latlng, zoom);
+	
+		L.easyButton('fa-home', function(btn, map){
+			var latlng = [35.737797, 139.653916];
+
+			map.setView(latlng, 5);
+			saveCurrentMap() ;
+		}).addTo(map);
+
+		var mapLink = '<a href="http://openstreetmap.org">OpenStreetMap</a>';
+	
+		L.tileLayer(
+			'http://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+			{
+				attribution: 'Map data &copy; ' + mapLink,
+				maxZoom: 18
+			}
+		).addTo(map);
+
+		let dataArray = await getDataArray() ;
+
+		for (let key in dataArray) {
+			let data = dataArray[key] ;
+
+			let lat = data["lat"] ;
+			let lng = data["lng"] ;
+
+			if (lat == undefined || lng == undefined) {
+				continue ;
+			}
+
+			let icon = null ;
+
+			let body = data["body"] ;
+	
+			let marker = L.marker([lat, lng]) ;
+
+			marker.bindPopup(body) ;
+
+			marker.addTo(map) ;
+		}
+
+		map.on('zoomend', function(e) {
+			saveCurrentMap() ;
+		}) ;
+
+		map.on('moveend', function(e) {
+			saveCurrentMap() ;
+		}) ;
+	}
+
+	async function getDataArray() {
+		let dataArray = [] ;
+	
+		let res = await fetch("https://www.city.nerima.tokyo.jp/kusei/tokei/opendata/opendatasite/hokenfukushi/aed.files/131202_aed.csv") ;
+
+		const ab = await res.arrayBuffer() ;
+		const td = new TextDecoder("Shift_JIS") ;
+
+		let elementsArray = convertToArray(td.decode(ab)) ;
+
+		let latIndex = 0 ;
+		let lngIndex = 0 ;
+		let nameIndex = 0 ;
+		let headers = null ;
+
+		for (let key in elementsArray) {
+			let elements = elementsArray[key] ;
+
+			if (key == 0) {
+				latIndex = elements.indexOf("緯度") ;
+				lngIndex = elements.indexOf("経度") ;
+				nameIndex = elements.indexOf("名称") ;
+			
+				headers = elements ;
+			} else {
+				let data = {} ;
+
+				if (elements[latIndex] != "") {
+					data["lat"] = Number(elements[latIndex])	;
+				} 
+
+				if (elements[lngIndex] != "") {
+					data["lng"] = Number(elements[lngIndex])	;
+				}
+
+				let name = elements[nameIndex] ;
+
+				let body = "<h3>" + name + "</h3>" ;
+
+				/*
+				body += "<table>" ;
+
+				for (let i=0; i<headers.length; i++) {
+					let header = headers[i] ;
+					let element = elements[i] ;
+
+					body += "<tr>" ;
+					body += "<td>" + header + "</td>" ;
+					body += "<td>" + element + "</td>" ;
+					body += "</tr>" ;
+				}
+
+				body += "</table>" ;
+				*/
+				
+				data["body"] = body ;
+
+				dataArray.push(data) ;
+			}
+		}
+		
+		return dataArray ;
+	}
+
+	function saveCurrentMap() {
+		let c = map.getCenter() ;
+        let z = map.getZoom() ;
+		
+		localStorage.setItem("latlng", JSON.stringify([c.lat, c.lng])) ;
+		localStorage.setItem("zoom", z) ;
+	}
+</script>
+</body>
+</html>
